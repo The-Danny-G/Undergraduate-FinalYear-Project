@@ -1,0 +1,170 @@
+---
+title: "Sliding Window"
+output: html_document
+date: "2023-03-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#TRYING METHOD FROM Trunc2 IN ONE DIMENSION
+transformer<-function(x,a,b,mu,sig){
+  return(qnorm(pnorm(x,mu,sig)*(pnorm(b,mu,sig)-pnorm(a,mu,sig))+pnorm(a,mu,sig),mu,sig))
+}
+```
+
+```{r}
+#TRYING GIBBS SAMPLER IN TWO DIMENSIONS
+library(MASS)
+set.seed(123)
+
+# Number of datapoints
+N<-1000
+
+# True parameters
+mu<-c(-0.5,-0.1)
+Sigma<-matrix(c(0.1,0.05,0.05,0.15),nrow=2)
+
+#Generating the full dataset
+data<-matrix(data=NA,ncol=2,nrow=N)
+for (i in (1:N)){
+  data[i,]<-mvrnorm(1,mu,Sigma)
+}
+
+###GIBBS SAMPLER
+
+#Create an empty matrix
+gibbs_datas<-matrix(data=NA,nrow=150,ncol=2)
+#Set initial value
+gibbs_datas[1,]<-c(-.6,-.1)
+for (i in 1:(150-1)){
+  #Sample X1(t+1) from F(.|X2(t))
+  mu.1<-mu[1]+(Sigma[1,2]/Sigma[2,2])*(gibbs_datas[i,2]-mu[2])
+  sig.1<-sqrt(Sigma[1,1]-((Sigma[1,2]^2)/Sigma[2,2]))
+  x1<-rnorm(1,mu.1,sig.1)
+  x1<-transformer(x1,-2,-.5,mu.1,sig.1)
+  #Sample X2(t+1) from F(.|X1(t+1))
+  mu.2<-mu[2]+(Sigma[1,2]/Sigma[1,1])*(x1-mu[1])
+  sig.2<-sqrt(Sigma[2,2]-((Sigma[1,2]^2)/Sigma[1,1]))
+  x2<-rnorm(1,mu.2,sig.1)
+  x2<-transformer(x2,-2,0,mu.2,sig.2)
+  gibbs_datas[i+1,]<-c(x1,x2)
+}
+
+
+plot(data,col='green',xlab='',ylab='',xlim=c(-1.5,0.5),ylim=c(-1.5,1.5))
+points(gibbs_datas,col='red')
+segments(-.5,0,-.5,-100)
+segments(-100,0,-.5,0)
+```
+
+```{r}
+# Creating more basic mvnorm distribution with a 'sliding window' of truncation
+set.seed(123)
+N<-1000
+data3<-matrix(data=NA,ncol=2,nrow=N)
+for (i in (1:N)){
+  data3[i,]<-mvrnorm(1,c(0,0),Sigma=matrix(data=c(0.5,0,0,0.05),nrow=2))
+}
+x1<- -3
+plot(data3,xlim=c(-3,3),ylim=c(-3,3))
+squares(ll=c(x1,-1),width = 1.5,col=NA)
+```
+
+```{r}
+# Defining sigma for this data
+Sigma=matrix(data=c(0.5,0,0,0.05),nrow=2)
+
+# Function for detecting whether a obs. is in the window
+isinA<-function(x,x1){
+  if (x[1]> x1){
+    if (x[1]< x1+1.5){
+      if (x[2]> -1){
+        if (x[2]< 0.5)
+          return(TRUE)
+      }
+    }
+  }
+  
+return(FALSE)
+}
+
+# Quadratic function
+quadratic<-function(x){
+  return(as.numeric(0.5*t(x)%*%solve(Sigma)%*%x))
+}
+```
+
+
+```{r}
+### Running RSM vs Normal method for less and less truncated data
+
+# Table of outputs
+acc_probs<-matrix(NA,nrow=6,ncol=3)
+# Leftmost point of the sliding window
+square_vals <- c(-3.0, -2.7, -2.4, -2.1, -1.8, -1.5)
+
+for (j in 1:6){
+  
+  x1 <- square_vals[j]
+  
+  # Optimise for RSM method
+  val<-optim(par=c(1,1),fn=quadratic, method = "L-BFGS-B",lower=c(x1,-1),upper=c(x1+1.5,.5))
+  mu.opt<-val$par
+  
+  # Seeing what percentage of data is contained
+  z=matrix(NA,nrow=1000,ncol=2)
+  for (i in (1:1000)){
+    if (isinA(data3[i,],x1)){
+      z[i,]<-data3[i,]
+      }
+  }
+  
+  # Seeing how many points RSM accepts
+  x=matrix(NA,nrow=10000,ncol=2)
+  for (i in (1:10000)){
+    value<-mvrnorm(1,mu.opt,Sigma)
+    if (isinA(value,x1)){
+      U<-runif(1)
+      num<-exp(t(mu.opt)%*%solve(Sigma)%*%mu.opt-t(value)%*%solve(Sigma)%*%mu.opt)
+      if (U<num){
+        x[i,]<-value
+      }
+    }
+  }
+  
+  # Seeing how many points the regular method accepts
+  y=matrix(NA,nrow=10000,ncol=2)
+  for (i in (1:10000)){
+    value<-mvrnorm(1,c(0,0),Sigma)
+    if (isinA(value,x1)){
+        y[i,]<-value
+      }
+    }
+
+  x<-drop_na(as.data.frame(x))
+  y<-drop_na(as.data.frame(y))
+  z<-drop_na(as.data.frame(z))
+  
+  acc_probs[j,1]<-dim(x)[1]/10000
+  acc_probs[j,2]<-dim(y)[1]/10000
+  acc_probs[j,3]<-dim(z)[1]/1000
+}
+```
+
+```{r}
+# Plot of sliding window
+plot(data3,xlim=c(-3,3),ylim=c(-3,3),xlab='',ylab='')
+squares(ll=c(-1.5,-1),width = 1.5,col=NA)
+segments(-3,-1,-1.5,-1,lty=2)
+segments(-3,0.5,-1.5,0.5,lty=2)
+segments(-3,-1,-3,0.5,lty=2)
+```
+
+```{r}
+# Table of results to use for paper
+as.table(acc_probs)
+```
+

@@ -1,0 +1,203 @@
+---
+title: "MMD Optimisation"
+output: html_document
+date: "2022-12-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+### Generating observed data from a alpha-stable distribution
+set.seed(123)
+library(stabledist)
+library(stats4)
+library(EnvStats)
+
+#We set our 'true values' to alpha=1.8 and beta=0.7, gamma and delta are default 1 and 0
+N=1000
+obs.data<-rstable(N,1.8,0.7,1.2,0.5)
+
+plot(density(obs.data),xlab='',ylab='Density',main='Density of observed data')
+```
+
+```{r}
+###Defining kernels 
+
+#Gaussian Kernel
+sigma<-.9
+kern<-function(x,y){
+  return(exp(-((x-y)^2)/(sigma^2)))
+}
+
+```
+
+```{r}
+###Generating Random Variables
+
+M<-1000
+U1<-runif(M,(-pi/2),pi/2)
+U2<-runif(M,(-pi/2),pi/2)
+W1<-rexp(M,rate=1)
+W2<-rexp(M,rate=1)
+```
+
+```{r}
+###Defining alpha-simulator
+
+simulator<-function(U,W,theta){
+  alpha<-theta[1]
+  beta<-theta[2]
+  gamma<-theta[3]
+  delta<-theta[4]
+  zeta<- (-beta)*tan((pi*alpha)/2)
+  xi<- (1/alpha)*atan(-zeta)
+  first<-(1+zeta^2)^(1/(2*alpha))
+  second<-(sin(alpha*(U+xi)))/(cos(U)^(1/alpha))
+  third<-((cos(U-alpha*(U+xi)))/(W))^((1-alpha)/(alpha))
+  X<-first*second*third
+  return(gamma*X+delta)
+}
+```
+
+```{r}
+###Defining MMD estimate
+
+MMDist<-function(theta){
+  sum1<-0
+  for (i in (1:M)){
+    part1<-kern(simulator(U1[i],W1[i],theta),simulator(U2[i],W2[i],theta))
+    sum2<-0
+    for (j in (1:N)){
+      sum2<-sum2+kern(simulator(U1[i],W1[i],theta),obs.data[j])
+    }
+    part2<-(2/N)*sum2
+    sum1<-sum1+part1-part2
+  }
+  return((1/M)*sum1)
+}
+```
+
+```{r}
+# Running MMD optimisation for six different values of sigma
+theta.init<-c(1.5,0.5,1.1,0.1)
+
+vals <- matrix(0,ncol=4,nrow=6)
+sigs <- c(20,5,1,0.5,0.2,0.01)
+for (i in 1:6){
+  
+  sigma <- sigs[i]
+  optimiser<-optim(theta.init,MMDist,method="L-BFGS-B",lower=c(1,0,0,0),upper=c(2,1,2,2))
+  vals[i,] <- optimiser$par
+}
+
+```
+
+```{r}
+# Getting a distribution from each optimised value of theta
+theta.hmm<-vals[1,]
+obs.data20<-rstable(N,theta.hmm[1],theta.hmm[2],theta.hmm[3],theta.hmm[4])
+theta.hmm<-vals[2,]
+obs.data5<-rstable(N,theta.hmm[1],theta.hmm[2],theta.hmm[3],theta.hmm[4])
+theta.hmm<-vals[3,]
+obs.data1<-rstable(N,theta.hmm[1],theta.hmm[2],theta.hmm[3],theta.hmm[4])
+theta.hmm<-vals[4,]
+obs.data0.5<-rstable(N,theta.hmm[1],theta.hmm[2],theta.hmm[3],theta.hmm[4])
+theta.hmm<-vals[5,]
+obs.data0.2<-rstable(N,theta.hmm[1],theta.hmm[2],theta.hmm[3],theta.hmm[4])
+theta.hmm<-vals[6,]
+obs.data0.01<-rstable(N,theta.hmm[1],theta.hmm[2],theta.hmm[3],theta.hmm[4])
+```
+
+```{r}
+plot(density(obs.data),lty=2,lwd=2)
+lines(density(obs.data20),col='purple')
+lines(density(obs.data5),col='maroon')
+lines(density(obs.data1),col='darkred')
+lines(density(obs.data0.5),col='red')
+lines(density(obs.data0.2),col='darkorange')
+lines(density(obs.data0.01),col='orange')
+```
+
+```{r}
+# Plotting the estimated density vs. true for each value of sigma
+par(mfrow=c(3,2))
+plot(density(obs.data),lty=2,lwd=1.5,xlim=c(-10,15),xlab='',ylab='Density',main='sigma=20')
+lines(density(obs.data20),col='purple',lwd=2)
+plot(density(obs.data),lty=2,lwd=1.5,xlim=c(-10,15),xlab='',ylab='Density',main='sigma=5')
+lines(density(obs.data5),col='maroon',lwd=2)
+plot(density(obs.data),lty=2,lwd=1.5,xlim=c(-10,15),xlab='',ylab='Density',main='sigma=1')
+lines(density(obs.data1),col='darkred',lwd=2)
+plot(density(obs.data),lty=2,lwd=1.5,xlim=c(-10,15),xlab='',ylab='Density',main='sigma=0.5')
+lines(density(obs.data0.5),col='red',lwd=2)
+plot(density(obs.data),lty=2,lwd=1.5,xlim=c(-10,15),xlab='',ylab='Density',main='sigma=0.2')
+lines(density(obs.data0.2),col='darkorange',lwd=2)
+plot(density(obs.data),lty=2,lwd=1.5,xlim=c(-10,15),xlab='',ylab='Density',main='sigma=0.01')
+lines(density(obs.data0.01),col='orange',lwd=2)
+```
+
+
+
+
+```{r}
+# Checking optimisation concavity for all parameters
+D1<-rep(0,100)
+D2<-rep(0,100)
+D3<-rep(0,100)
+D4<-rep(0,100)
+xs1<-seq(1,2,0.01)
+xs2<-seq(0,1,0.01)
+xs3<-seq(0,2,0.02)
+xs4<-seq(0,2,0.02)
+
+for (i in (1:100)){
+  D1[i]<-MMDist(c(xs1[i],0.7,1.2,0.5))
+  D2[i]<-MMDist(c(1.8,xs2[i],1.2,0.5))
+  D3[i]<-MMDist(c(1.8,0.7,xs3[i],0.5))
+  D4[i]<-MMDist(c(1.8,0.7,1.2,xs4[i]))
+}
+```
+
+```{r}
+# Plotting
+par(mfrow=c(2,2))
+plot(xs1[1:100],D1,type='l',ylab='MMD distance',xlab='Alpha')
+plot(xs2[1:100],D2,type='l',ylab='MMD distance',xlab='Beta')
+plot(xs3[1:100],D3,type='l',ylab='MMD distance',xlab='Gamma')
+plot(xs4[1:100],D4,type='l',ylab='MMD distance',xlab='Delta')
+```
+
+```{r}
+# Function for normalising theta
+thingy<-function(theta){
+  theta[1]<-theta[1]-1
+  theta[2]<-theta[2]
+  theta[3]<-(theta[3])/2
+  theta[4]<-(theta[4])/2
+  return(theta)
+}
+```
+
+```{r}
+# Visualising how parameter estimates differ for each value of sigma
+theta.true <- c(1.8,0.7,1.2,0.5)
+
+plot(c(1,2,3,4),thingy(theta.true),ylim=c(0,1),pch=16,ylab='',xlab='',main='Parameter estimates for different values of sigma')
+points(c(1,2,3,4),thingy(vals[1,]),col='purple',pch=17)
+points(c(1,2,3,4),thingy(vals[2,]),col='maroon',pch=17)
+points(c(1,2,3,4),thingy(vals[3,]),col='darkred',pch=17)
+points(c(1,2,3,4),thingy(vals[4,]),col='red',pch=17)
+points(c(1,2,3,4),thingy(vals[5,]),col='darkorange',pch=17)
+points(c(1,2,3,4),thingy(vals[6,]),col='orange',pch=17)
+segments(1,0,1,1,lty=2)
+segments(2,0,2,1,lty=2)
+segments(3,0,3,1,lty=2)
+segments(4,0,4,1,lty=2)
+text(c(1.15,2.15,3.2,3.8),thingy(theta.true),c('Alpha','Beta','Gamma','Delta'),cex=.9)
+legend(2.35,0.4,c('20','5','1','0.5','0.2','0.01'),fill=c('purple','maroon','darkred','red','darkorange','orange'),cex=.8)
+```
+
+
+
+

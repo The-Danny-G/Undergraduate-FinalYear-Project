@@ -1,0 +1,69 @@
+---
+title: "Contour Plots"
+output: html_document
+date: "2023-04-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#CONTOUR PLOT
+
+library(mnormt)
+
+#make this example reproducible
+set.seed(0)
+
+#create bivariate normal distribution
+x     <- seq(-3, 3, 0.1) 
+y     <- seq(-3, 3, 0.1)
+mu    <- c(0, 0)
+sigma <- matrix(c(2, -1, -1, 2), nrow=2)
+f     <- function(x, y) dmnorm(cbind(x, y), mu, sigma)
+z     <- outer(x, y, f)
+```
+
+```{r}
+# Draw first four steps
+draw_arrows<-function(centre,step_size,color){
+  arrows(centre[1],centre[2],centre[1]-step_size,centre[2],length=0.1,col=color,lwd=par(lwd=2))
+  arrows(centre[1],centre[2],centre[1]+step_size,centre[2],length=0.1,col=color,lwd=par(lwd=2))
+  arrows(centre[1],centre[2],centre[1],centre[2]+step_size,length=0.1,col=color,lwd=par(lwd=2))
+  arrows(centre[1],centre[2],centre[1],centre[2]-step_size,length=0.1,col=color,lwd=par(lwd=2))
+}
+
+```
+
+```{r}
+#create contour plot
+contour(x, y, z)
+draw_arrows(c(-2,1.1),1,'firebrick1')
+draw_arrows(c(-1,1.1),1,'firebrick3')
+draw_arrows(c(0,1.1),1,'firebrick')
+draw_arrows(c(0,0.1),1,'firebrick4')
+draw_arrows(c(0,0.1),0.5,'black')
+```
+
+
+```{r}
+# Plot optimisation step by step
+par(mfrow=c(1,4))
+contour(x, y, z,lwd=par(lwd=0.1))
+draw_arrows(c(-1,1.1),1,'red')
+points(-1,1.1,pch=4,col='blue')
+
+contour(x, y, z,lwd=par(lwd=0.1))
+draw_arrows(c(0,1.1),1,'red')
+points(0,1.1,pch=4,col='blue')
+
+contour(x, y, z,lwd=par(lwd=0.1))
+draw_arrows(c(0,0.1),1,'red')
+points(0,0.1,pch=4,col='blue')
+
+contour(x, y, z,lwd=par(lwd=0.1))
+draw_arrows(c(0,0.1),0.5,'red')
+points(0,0.1,pch=4,col='blue')
+```
+
