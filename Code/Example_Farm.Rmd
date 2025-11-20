@@ -1,0 +1,175 @@
+---
+title: "Example_Farm"
+output: html_document
+date: "2023-03-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(123)
+library(ggpubr)
+library(jpeg)
+
+```
+
+```{r}
+# Loading in farm satelitte image
+pic<-readJPEG('../_Images/trun_farm.jpeg')
+```
+
+```{r}
+# Generating random bivariate normal distribution dataset
+library(MASS)
+N<-500
+data<-matrix(data=NA,ncol=2,nrow=N)
+for (i in (1:N)){
+  data[i,]<-mvrnorm(1,c(-0.5,-0.1),Sigma=matrix(data=c(0.1,0.05,0.05,0.15),nrow=2))
+}
+datas<-as.data.frame(data,col.names=names(data),row.names = names(data))
+```
+
+```{r}
+plot(data[,1],data[,2],xlim=c(-2,2),ylim=c(-2,2))
+```
+```{r}
+# Plotting data over farm image
+ggplot(datas, aes(x = V1, y = V2)) +
+background_image(pic) +
+geom_point(color='yellow') +
+xlim(-2,2) +
+ylim(-2,2) +
+theme(axis.line=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank())
+```
+
+
+
+```{r}
+# Truncating data to region
+new_data<-matrix(NA,nrow=N,ncol=2)
+for (i in (1:N)){
+  val<-data[i,]
+  x<-val[1]
+  y<-val[2]
+  if (y<0.9){
+    if (y>(-4*x-2.6)){
+      if (y>(0.3*x-0.7)){
+        new_data[i,]<-data[i,]
+      }
+    }
+  }
+}
+```
+
+```{r}
+# New truncated dataset
+library(tidyr)
+new_datas<-as.data.frame(new_data)
+new_datas<-drop_na(new_datas)
+```
+
+```{r}
+# Reading in farm image with regions defined
+new_pic<-readJPEG('../_Images/Farm_Example_Highlight.jpeg')
+```
+
+
+```{r}
+# Replotting data with regions defined and data truncated appropriately
+ggplot(new_datas, aes(x = V1, y = V2)) +
+background_image(new_pic) +
+geom_point(color='yellow') +
+xlim(-2,2) +
+ylim(-2,2) +
+theme(axis.line=element_blank(),
+      axis.text.x=element_blank(),
+      axis.text.y=element_blank(),
+      axis.ticks=element_blank(),
+      axis.title.x=element_blank(),
+      axis.title.y=element_blank())
+```
+```{r}
+# Creating polygon representing the farm region
+ggplot(datas, aes(x = V1, y = V2)) +
+background_image(pic) +
+geom_point(color='yellow') +
+xlim(-2,2) +
+ylim(-2,2) +
+geom_abline(intercept = -2.6, slope = -4) +
+geom_abline(intercept = -.7, slope = .3) +
+geom_abline(intercept = .9, slope =0) +
+geom_abline(intercept = -0.1, slope = -0.6) +
+geom_abline(intercept = -1, slope = .9)
+```
+
+```{r}
+# Plotting farm polygon
+plot(new_datas$V1,new_datas$V2,xlim=c(-2,2),ylim=c(-2,2),xlab='',ylab='')
+segments(-0.442,-0.833,0.5,-0.55)
+segments(0.5,-0.55,1,-0.1)
+segments(1,-0.1,1,0.9)
+segments(1,0.9,-1.1,0.9)
+segments(-1.1,0.9,-1.1,0.56)
+segments(-1.1,0.56,-0.735,0.341)
+segments(-0.735,0.341,-0.442,-0.833)
+```
+
+```{r}
+# Function for determining whether a point is contained in the polygon
+isinC<-function(v){
+  x<-v[1]
+  y<-v[2]
+  if (y < -0.55){
+    if (y > -4*x-2.6){
+      if (y > 0.3*x-0.7){
+        return(TRUE)
+      }
+    }
+  }
+  if (y > -0.55 & y < -0.1){
+    if ( y > -4*x -2.6 & y > 0.9*x -1){
+      return(TRUE)
+    }
+  }
+  if (y > -0.1 & y < 0.341){
+    if (y > -4*x-2.6 & x<1){
+      return(TRUE)
+    }
+  }
+  if (y > 0.341 & y < 0.56){
+    if (y > -0.6*x-0.1 & x<1){
+      return(TRUE)
+    }
+  }
+  if (y > 0.56 & y < 0.9){
+    if ( x > -1.1 & x < 1){
+      return(TRUE)
+    }
+  }
+  return(FALSE)
+}
+```
+
+```{r}
+# Testing randomly generated points restricted to the polygon
+N<-10000
+newnew_datas<-matrix(NA,nrow=N,ncol=2)
+test<-rep(0,N)
+for (i in (1:N)){
+  val<-runif(2,-2,2)
+  if (isinC(val)){
+    newnew_datas[i,]<-val
+  }
+}
+
+plot(newnew_datas,xlim=c(-2,2),ylim=c(-2,2))
+```
+
+

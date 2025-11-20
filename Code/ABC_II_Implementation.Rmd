@@ -1,0 +1,332 @@
+---
+title: "ABC/II Implementation"
+author: "Daniel Gardner"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Generating synthetic data from a N(0,0.25) distribution
+set.seed(123)
+data<-rnorm(100,mean=0,sd=0.5)
+plot(density(data))
+print(c(mean(data),sd(data)))
+```
+```{r}
+### Initial Basic Bayesian Implementation
+
+#Function to acting as our 'generator' for a given theta
+simulate1<-function(theta){
+  simdata<-rnorm(100,mean=theta[1],sd=theta[2])
+  return(simdata)
+}
+
+n<-100 #Number of data points
+tolerance<-1000 # Tolerance value
+mu<-c(0) # Array of values of mu to append
+sigma<-c(0.5) # Array of values of sigma to append
+
+repeat{
+  if(length(mu)==500){ #Number of simulations fo theta we want
+    break
+  }
+  #Sampling theta from our prior distribution
+  simmean<-rnorm(1,1,5) 
+  simsd<-runif(1,0,2)
+  simtheta<-c(simmean,simsd) 
+  
+  #Generating data from the sampled theta
+  simdata<-simulate1(simtheta)
+  
+  #Calculate distance 
+  distance<-(1/n)*sum(((data-simdata)**2)/(data**2)) 
+  
+  #Only accept theta if the distance falls below a certain tolerance
+  if (distance<tolerance){ 
+    mu<-append(mu,simmean)
+    sigma<-append(sigma,simsd)
+  }
+}
+
+# Remove initial placeholder values
+mu<-mu[2:100]
+sigma<-sigma[2:100]
+
+# Plot N(1,5) prior in red vs the ABC posterior density
+x <- seq(-10,10)
+plot(density(mu),xlim=c(-10,10),xlab='mu',ylab='Density',main='Density of Prior vs Posterior of mu',col='blue')
+lines(x,dnorm(x,1,5),col='red')
+```
+
+
+```{r}
+##Attempting to code Indirect Inference minimum distance estimator example
+set.seed(123)
+#First create our 'black box' simulator which inputs theta and outputs our 10 summary statistics
+
+sumsim<-function(theta){
+  sum<-rep(0,10)
+  for (i in 1:10){
+    sum[i]=theta*i+rnorm(1,0,1)
+  }
+  sum
+}
+
+#Now lets say our true value of theta is 2, so lets create our 'true' summary statistics from the 'observed data'
+
+truesum<-sumsim(2)
+
+# Now we perform indirect inference
+
+
+
+n=1000
+dist=rep(0,n)
+theta<-rep(0,n)
+for (i in 1:n){
+  theta[i]<-runif(1,1,3) #sample random theta
+  sumhat<-sumsim(theta[i]) #generate summary statistic estimate from simulation
+ # W=solve(diag(2,10)) #Using W=(diag(sig))^-1
+  W=diag(10) #Using W=I
+  dist[i]<-(sumhat-truesum)%*%W%*%(sumhat-truesum)
+}
+
+plot(theta,dist,xlim=c(1,3),cex.lab=0.8,ylim=c(0,300),xlab=expression(theta),ylab=expression(paste("[",hat(S),"(",theta,")-S*]W[",hat(S),"(",theta,")-S*]"^T)))
+abline(v=theta[which.min(dist)],col='red',lwd=3)
+```
+
+```{r}
+#Then we can minimise this 
+
+theta[which.min(dist)]
+```
+
+
+
+```{r}
+##Re-attempting the indirect inference example using alpha-stable dist
+set.seed(123)
+library(stabledist)
+library(stats4)
+library(EnvStats)
+
+#We set our 'true values' to alpha=1.8 and beta=0.7, gamma and delta are default 1 and 0
+obs.data<-rstable(5000,1.8,0.7)
+
+plot(density(obs.data))
+```
+
+
+```{r}
+#Now lets try the II method again using a normal distribution approximation as our auxiliary parameter.
+
+set.seed(123)
+
+par.obs<-enorm(obs.data)$parameters
+
+n=1000
+dist=rep(0,n)
+alpha<-rep(0,n)
+beta<-rep(0,n)
+for (i in 1:n){
+  alpha[i]<-runif(1,1,2) #sample random theta
+  beta[i]<-runif(1,0,1) #sample random beta
+  par.hat<-enorm(rstable(10000,alpha[i],beta[i]))$parameters #generate auxiliary parameter estimate from simulation
+  W=diag(2) #Using W=I
+  dist[i]<-t(par.hat-par.obs)%*%W%*%(par.hat-par.obs)
+}
+
+par(mfrow=c(1,2))
+plot(beta,log(dist))
+plot(alpha,log(dist))
+```
+
+```{r}
+#Now lets try the II method again using a normal distribution approximation as our auxiliary parameter. (One dimensional version)
+
+set.seed(123)
+
+mean.obs<-(enorm(obs.data)$parameters)[1]
+
+n=1000
+tabl<-matrix(nrow=n,ncol=3)
+for (i in 1:n){
+  alpha[i]<-runif(1,1,2) #sample random theta
+  tabl[i,2]<-alpha[i]
+  #beta[i]<-runif(1,0,1) #sample random beta
+  beta[i]<-0.7
+  tabl[i,3]<-beta[i]
+  mean.hat<-(enorm(rstable(10000,alpha[i],beta[i]))$parameters)[1] #generate auxiliary parameter estimate from simulation
+  W=diag(1) #Using W=I
+  dist<-t(mean.hat-mean.obs)%*%W%*%(mean.hat-mean.obs)
+  tabl[i,1]<-log(dist)
+}
+
+
+
+library(ggplot2)
+tabl<-as.data.frame(tabl)
+
+
+plot(tabl[,2],tabl[,1],xlab=expression(alpha),ylab=expression(paste("log[",hat(beta),"(",alpha,")-",beta,"*]W[",hat(beta),"(",alpha,")-",beta,"*]^T")))
+```
+```{r}
+alpha.hat <- tabl[which.min(tabl[,1]),2]
+
+alpha.hat
+```
+
+
+
+
+```{r}
+
+xs<-seq(-10,20,0.5)
+
+plot(density(obs.data))
+lines(xs,dstable(xs,alpha.hat,0.7),col='red')
+```
+Well that worked pretty well, lets try ABC again.
+
+```{r}
+#Again lets look at our data
+plot(density(obs.data))
+```
+```{r}
+### ABC Implementation for alpha-stable distribution
+
+n=5000
+tolerance=1000
+distances<-c()
+alpha<-c()
+beta<-c()
+repeat{
+  if(length(alpha)==n){
+    break
+  }
+  alpha.sample<-runif(1,1,2)
+  beta.sample<-runif(1,0,1)
+  sim.data<-rstable(5000,alpha.sample,beta.sample)
+  sim.data<-sort(sim.data)
+  obs.data<-sort(obs.data)
+  distance<-norm(as.matrix(obs.data-sim.data))
+  if (distance<tolerance){
+    alpha<-append(alpha,alpha.sample)
+    beta<-append(beta,beta.sample)
+    distances<-append(distances,distance)
+  }
+}
+
+as<-seq(1,2,0.005)
+bs<-seq(0,1,0.005)
+
+par(mfrow=c(1,2))
+
+plot(density(alpha),xlim=c(1,2),col='blue')
+lines(as,dunif(as,min=1,max=2))
+
+plot(density(beta),xlim=c(0,1),col='red')
+lines(bs,dunif(bs,min=0,max=1))
+```
+
+```{r}
+xs<-seq(-10,20,0.5)
+gauss.est<-enorm(obs.data)
+mean.est<-gauss.est$parameters[1]
+sd.est<-gauss.est$parameters[2]
+
+plot(density(obs.data))
+#lines(xs,dstable(xs,alpha.hat,0.7),col='red')
+lines(xs,dstable(xs,mean(alpha),0.7),col='blue')
+```
+
+
+```{r}
+### ABC Implementation for alpha-stable distribution (alternate method)
+set.seed(123)
+n<-10000
+percent<-0.01
+tabl<-matrix(data=0,nrow=n,ncol=3)
+for (i in 1:n){
+  alpha.sample<-runif(1,1,2)
+  beta.sample<-runif(1,0,1)
+  sim.data<-rstable(5000,alpha.sample,beta.sample)
+  sim.data<-sort(sim.data)
+  obs.data<-sort(obs.data)
+  distance<-norm(as.matrix(obs.data-sim.data))
+  tabl[i,1]<-distance
+  tabl[i,2]<-alpha.sample
+  tabl[i,3]<-beta.sample
+}
+tabl<-tabl[order(tabl[,1]),]
+alpha<-tabl[(1:(n*percent)),2]
+beta<-tabl[(1:(n*percent)),3]
+
+as<-seq(1,2,0.005)
+bs<-seq(0,1,0.005)
+
+par(mfrow=c(1,2))
+
+plot(density(alpha),xlim=c(1,2),col='blue',xlab=expression(alpha),ylab='Density',main=expression(paste('Posterior density of ',alpha)))
+lines(as,dunif(as,min=1,max=2))
+
+plot(density(beta),xlim=c(0,1),col='red',xlab=expression(beta),ylab='Density',main=expression(paste('Posterior density of ',beta)))
+lines(bs,dunif(bs,min=0,max=1))
+```
+
+
+```{r}
+### ABC Implementation for alpha-stable distribution (all four parameters estimated)
+set.seed(123)
+obs.data<-rstable(5000,1.8,0.7,1.2,0.5)
+
+
+
+n<-50000
+percent<-0.001
+tabl<-matrix(data=0,nrow=n,ncol=5)
+for (i in 1:n){
+  alpha.sample<-runif(1,1,2)
+  beta.sample<-runif(1,0,1)
+  gamma.sample<-runif(1,0,5)
+  delta.sample<-rnorm(1,1,2)
+  sim.data<-rstable(5000,alpha.sample,beta.sample,gamma.sample,delta.sample)
+  sim.data<-sort(sim.data)
+  obs.data<-sort(obs.data)
+  distance<-norm(as.matrix(obs.data-sim.data))
+  tabl[i,1]<-distance
+  tabl[i,2]<-alpha.sample
+  tabl[i,3]<-beta.sample
+  tabl[i,4]<-gamma.sample
+  tabl[i,5]<-delta.sample
+}
+tabl<-tabl[order(tabl[,1]),]
+alpha<-tabl[(1:(n*percent)),2]
+beta<-tabl[(1:(n*percent)),3]
+gamma<-tabl[(1:(n*percent)),4]
+delta<-tabl[(1:(n*percent)),5]
+
+
+as<-seq(1,2,0.005)
+bs<-seq(0,1,0.005)
+cs<-seq(0,5,0.005)
+ds<-seq(-2,4,0.005)
+
+par(mfrow=c(2,2))
+
+plot(density(alpha),xlim=c(1,2),col='blue',xlab=expression(alpha),main=expression(paste('Posterior density of ',alpha)))
+lines(as,dunif(as,min=1,max=2))
+
+plot(density(beta),xlim=c(0,1),col='red',xlab=expression(beta),main=expression(paste('Posterior density of ',beta)))
+lines(bs,dunif(bs,min=0,max=1))
+
+plot(density(gamma),xlim=c(0,5),col='green',xlab=expression(gamma),main=expression(paste('Posterior density of ',gamma)))
+lines(cs,dunif(cs,min=0,max=5))
+
+plot(density(delta),xlim=c(-2,4),col='purple',xlab=expression(delta),main=expression(paste('Posterior density of ',delta)))
+lines(ds,dnorm(ds,1,2))
+```
