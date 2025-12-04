@@ -1,0 +1,452 @@
+---
+title: "MMD_Everything"
+author: "Daniel Gardner"
+date: "2025-12-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Generating Data
+
+```{r}
+library(MASS)
+library(factorplot)
+library(plotrix)
+library(tidyr)
+library(optimization)
+library(rBayesianOptimization)
+library(ParBayesianOptimization)
+#Beginning by setting the seed and number of observations
+set.seed(123)
+
+#True values of the parameters for farm
+mu.farm<-c(-0.5,-0.1)
+Sigma.farm=matrix(c(0.1,0.05,0.05,0.15),nrow=2)
+theta.true.farm<-c(-0.5,-0.1,0.1,0.15,0.41)
+
+#True values of the parameters for circle
+mu.cir<-c(0,0)
+Sigma.cir=matrix(c(0.5,0,0,0.05),nrow=2)
+theta.true.cir<-c(0,0,0.5,0.05,0)
+
+#Generating the data
+N<-500
+data.farm<-matrix(data=NA,ncol=2,nrow=N)
+data.cir<-matrix(data=NA,ncol=2,nrow=N)
+for (i in (1:N)){
+  data.farm[i,]<-mvrnorm(1,mu.farm,Sigma.farm)
+  data.cir[i,]<-mvrnorm(1,mu.cir,Sigma.cir)
+}
+datas.farm<-as.data.frame(data.farm,col.names=names(data.farm),row.names = names(data.farm))
+datas.cir<-as.data.frame(data.cir,col.names=names(data.cir),row.names = names(data.cir))
+
+# Plotting
+par(mfrow=c(1,2))
+plot(datas.farm)
+plot(datas.cir)
+```
+
+# Truncating Data to a Boundary
+
+```{r}
+#Defining our farm boundary
+isinfarm<-function(v){
+  x<-v[1]
+  y<-v[2]
+  if (y < -0.55){
+    if (y > -4*x-2.6){
+      if (y > 0.3*x-0.7){
+        return(TRUE)
+      }
+    }
+  }
+  if (y > -0.55 & y < -0.1){
+    if ( y > -4*x -2.6 & y > 0.9*x -1){
+      return(TRUE)
+    }
+  }
+  if (y > -0.1 & y < 0.341){
+    if (y > -4*x-2.6 & x<1){
+      return(TRUE)
+    }
+  }
+  if (y > 0.341 & y < 0.56){
+    if (y > -0.6*x-0.1 & x<1){
+      return(TRUE)
+    }
+  }
+  if (y > 0.56 & y < 0.9){
+    if ( x > -1.1 & x < 1){
+      return(TRUE)
+    }
+  }
+  return(FALSE)
+}
+
+#Defining our circular truncation boundary A
+isinA<-function(x){
+  val<-(x[1]+0.3)^2+(x[2]-0.3)^2
+  if (val < 0.49){
+    return(TRUE)
+  }
+  else{
+    return(FALSE)
+  }
+}
+
+
+#Function for truncating data sets based off a shape function
+truncation <- function(boundaryfunc,data){
+  
+  z=matrix(NA,nrow=N,ncol=2)
+  for (i in (1:N)){
+    if (boundaryfunc(data[i,])){
+      z[i,]<-data[i,]
+      }
+    }
+  z<-drop_na(as.data.frame(z))
+  obs.data<-as.matrix(z)
+  return(obs.data)
+}
+
+# Truncating data sets
+obs.data.farm <- truncation(isinfarm, data.farm)
+obs.data.cir <- truncation(isinA, data.cir)
+
+par(mfrow=c(1,2))
+
+#Setting our truncation boundaries
+xtrunc.farm<-c(-1.1,1)
+ytrunc.farm<-c(-0.833,0.9)
+
+#plotting the data, with farm boundary and square surrounding
+plot(data.farm,xlim=c(-2.5,2.5),ylim=c(-2.5,2.5))
+points(obs.data.farm,col='red')
+segments(-0.442,-0.833,0.5,-0.55)
+segments(0.5,-0.55,1,-0.1)
+segments(1,-0.1,1,0.9)
+segments(1,0.9,-1.1,0.9)
+segments(-1.1,0.9,-1.1,0.56)
+segments(-1.1,0.56,-0.735,0.341)
+segments(-0.735,0.341,-0.442,-0.833)
+
+#Setting our truncation boundaries
+xtrunc.cir<-c(-1,0.4)
+ytrunc.cir<-c(-0.4,1)
+
+#plotting the data, with circular truncation boundary and square surrounding
+plot(data.cir,xlim=c(-2.5,2.5),ylim=c(-2.5,2.5))
+points(obs.data.cir,col='red')
+squares(ll=c(xtrunc.cir[1],ytrunc.cir[1]),width=1.4,col=NA)
+draw.circle(-0.3,0.3,0.7)
+```
+
+# Defining Optimisation Functions
+
+```{r}
+#Defining kernels 
+
+#Gaussian Kernel
+sigma<-.5
+kern<-function(x,y){
+  x<-as.matrix(x)
+  y<-as.matrix(y)
+  return(exp(-(norm(x-y)^2)/(sigma^2)))
+}
+
+```
+
+```{r}
+#Generating Random Variables
+
+#M is our desired number of simulations generated
+M<-500
+#K is our limit of how many iterations we will try before giving up
+K<-3*M
+
+U1.1<-runif(K)
+U1.2<-runif(K)
+U2.1<-runif(K)
+U2.2<-runif(K)
+U1<-data.frame(U1.1,U1.2)
+U2<-data.frame(U2.1,U2.2)
+```
+
+```{r}
+#Defining MMD distance
+MMDist<-function(x,y,obs.data){
+  #Set N to the length of the observations
+  N<-dim(obs.data)[1]
+  sum1<-0
+  for (i in (1:M)){
+    part1<-kern(x[i,],y[i,])
+    sum2<-0
+    for (j in (1:N)){
+      sum2<-sum2+kern(x[i,],obs.data[j,])
+    }
+    part2<-(2/N)*sum2
+    sum1<-sum1+part1-part2
+  }
+  return((1/M)*sum1)
+}
+```
+
+```{r}
+
+#Defining logistic function
+logit<-function(x){
+  return((exp(x))/(1+exp(x)))
+}
+
+#Defining our transformer for Gibbs
+transformer<-function(x,a,b,mu,sig){
+  num<-pnorm(x,mu,sig)*(pnorm(b,mu,sig)-pnorm(a,mu,sig))+pnorm(a,mu,sig)
+  if (num <= 1 & num >=0){
+    val<-qnorm(num,mu,sig)
+  #For extreme values we make sure it can't be infinity or -infinity
+  if (val==-Inf){
+    return(-100000)
+  }
+  if (val==Inf){
+    return(10000)
+  }
+  else{
+    return(val)
+  }
+  }
+}
+
+#Function for removing NA variables
+dropnas<-function(x){
+  x1<-as.data.frame(x)
+  x1<-drop_na(x1)
+  x1<-as.matrix(x1)
+  return(x1)
+}
+
+#Defining our Gibbs sampler which returns M simulations
+simulator<-function(M,xtrunc,ytrunc,mu,Sigma,U,isinset){
+#Create an empty matrix of length K for the gibbs and accepted gibbs
+gibbs_datas<-matrix(data=NA,nrow=K,ncol=2)
+gibbs_datas_accepted<-matrix(data=NA,nrow=K,ncol=2)
+#Set count and accepted count
+count<-0
+accept.count<-0
+#Set initial value
+gibbs_datas[1,]<-c(0,0)
+for (i in 1:(K-1)){
+  #If we have hit our desired length return the accepted values
+  if (accept.count == M){
+    return(dropnas(gibbs_datas_accepted))
+  }
+  #If we have reached K iterations without generating M values, we count it as a fail
+  #GIBBS SAMPLER
+  #Sample X1(t+1) from F(.|X2(t))
+  mu.1<-mu[1]+(Sigma[1,2]/Sigma[2,2])*(gibbs_datas[i,2]-mu[2])
+  sig.1<-sqrt(Sigma[1,1]-((Sigma[1,2]^2)/Sigma[2,2]))
+  x1<-qnorm(U[i,1],mu.1,sig.1)
+  x1<-transformer(x1,xtrunc[1],xtrunc[2],mu.1,sig.1)
+  #Sample X2(t+1) from F(.|X1(t+1))
+  mu.2<-mu[2]+(Sigma[1,2]/Sigma[1,1])*(x1-mu[1])
+  sig.2<-sqrt(Sigma[2,2]-((Sigma[1,2]^2)/Sigma[1,1]))
+  x2<-qnorm(U[i,2],mu.2,sig.1)
+  x2<-transformer(x2,ytrunc[1],ytrunc[2],mu.2,sig.2)
+
+  #Check if sample is in A
+  proposal<-c(x1,x2)
+  if (isinset(proposal)){
+    gibbs_datas_accepted[i+1,]<-proposal
+    gibbs_datas[i+1,]<-proposal
+    #Add one to count
+    accept.count<-accept.count+1
+  }
+  if (isinset(proposal)==FALSE){
+    gibbs_datas[i+1,]<-gibbs_datas[i,]
+  }
+  #Increase overall count by 1
+  count<-count+1
+}
+return(dropnas(gibbs_datas_accepted))
+}
+```
+
+```{r}
+#DEFINING OUR FUNCTION TO OPTIMISE
+
+optimiser<-function(par,isinset,obs.data,xtrunc,ytrunc){
+  #Set mu to the first two components
+  
+  mu<-c(par[1],par[2])
+  #Make sure sig11 and sig22 are positive
+  sig11<-par[3]
+  if (sig11==0){
+    return(1)
+  }
+  if (sig11==Inf){
+    return(1)
+  }
+  
+  sig22<-par[4]
+  if (sig22==0){
+    return(1)
+  }
+  if (sig22==Inf){
+    return(1)
+  }
+  #Make sure sig12 is both positive and also satisfies sig11*sig22 > sig12^2
+  #sig12.sqr<-sig11*sig22*logit(par[5])
+  corr<-par[5]
+  sig12<-sqrt(sig11*sig22)*corr
+  #Create covariance matrix
+  Sigma<-matrix(c(sig11,sig12,sig12,sig22),nrow=2)
+  #Generate two lots of simulated values
+  vals1<-simulator(M,xtrunc,ytrunc,mu,Sigma,U1,isinset)
+  vals2<-simulator(M,xtrunc,ytrunc,mu,Sigma,U2,isinset)
+  
+  #Check if either of them have failed in producing a simulation of length M
+  #If they have, return a very large value
+  if (dim(vals1)[1]!=M){
+    return(1)
+  }
+  if (dim(vals2)[1]!=M){
+    return(1)
+  }
+  #If not, calculate the MMD distance
+  else{
+    return(MMDist(vals1,vals2,obs.data))
+  }
+}
+```
+
+
+```{r}
+# Optimiser value of farm
+optimiser(theta.true.farm, isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm)
+```
+```{r}
+# Optimiser value of circ
+optimiser(theta.true.cir, isinA, obs.data.cir, xtrunc.cir, ytrunc.cir)
+```
+
+
+# Optimisation
+
+```{r}
+#DEFINING OUR FUNCTION TO OPTIMISE
+
+optimiser_mu<-function(par,isinset,obs.data,xtrunc,ytrunc){
+  #Set mu to the first two components
+  
+  mu<-c(par[1],par[2])
+
+  #Generate two lots of simulated values
+  vals1<-simulator(M,xtrunc,ytrunc,mu,Sigma.farm,U1,isinset)
+  vals2<-simulator(M,xtrunc,ytrunc,mu,Sigma.farm,U2,isinset)
+  
+  #Check if either of them have failed in producing a simulation of length M
+  #If they have, return a very large value
+  if (dim(vals1)[1]!=M){
+    return(1)
+  }
+  if (dim(vals2)[1]!=M){
+    return(1)
+  }
+  #If not, calculate the MMD distance
+  else{
+    return(MMDist(vals1,vals2,obs.data))
+  }
+}
+```
+
+```{r}
+optimiser_mu(c(0,0),isinfarm,obs.data.farm,xtrunc.farm, ytrunc.farm )
+```
+
+
+```{r}
+# Reducing fitness function to only the optimised parameter
+fitness_func_maker <- function(isinset, obs.data, xtrunc, ytrunc){
+  
+  fitness_func <- function(par){
+    
+    return(optimiser_mu(c(par[1], par[2]),isinset, obs.data, xtrunc, ytrunc))
+    
+  }
+  
+  return(fitness_func)
+  
+}
+```
+
+
+
+```{r}
+# Running for various values of M
+M <- 100
+nelder_mead_100<-optim_nm(fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.001,exit=30)
+M <- 500
+nelder_mead_500<-optim_nm(fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.001,exit=30)
+M <- 1000
+nelder_mead_1000<-optim_nm(fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.001,exit=30)
+```
+
+```{r}
+#Plotting
+par(mfrow=c(1,3))
+
+plot(as.matrix(nelder_mead_100$trace[,'iteration']),as.matrix(nelder_mead_100$trace[,'x_1']),type='l',ylim=c(-1,0.5),col='red',xlab='Iteration',ylab='mu_1')
+lines(as.matrix(nelder_mead_500$trace[,'iteration']),as.matrix(nelder_mead_500$trace[,'x_1']),col='blue')
+lines(as.matrix(nelder_mead_1000$trace[,'iteration']),as.matrix(nelder_mead_1000$trace[,'x_1']),col='green')
+abline(h=-0.5,lty=2)
+legend(20,0.4,legend = c("M = 100","M = 500","M = 1000"),fill=c('red','blue','green'),cex=.8)
+
+plot(as.matrix(nelder_mead_100$trace[,'iteration']),as.matrix(nelder_mead_100$trace[,'x_2']),type='l',ylim=c(-1,0.5),col='red',xlab='Iteration',ylab='mu_2')
+lines(as.matrix(nelder_mead_500$trace[,'iteration']),as.matrix(nelder_mead_500$trace[,'x_2']),col='blue')
+lines(as.matrix(nelder_mead_1000$trace[,'iteration']),as.matrix(nelder_mead_1000$trace[,'x_2']),col='green')
+abline(h=-0.1,lty=2)
+legend(20,-0.5,legend = c("M = 100","M = 500","M = 1000"),fill=c('red','blue','green'),cex=.8)
+
+plot(as.matrix(nelder_mead_100$trace[,'x_1']),as.matrix(nelder_mead_100$trace[,'x_2']),type='l',ylim=c(-.5,.5),xlim=c(-1,0),col='red',xlab='mu_1',ylab='mu_2')
+lines(as.matrix(nelder_mead_500$trace[,'x_1']),as.matrix(nelder_mead_500$trace[,'x_2']),col='blue')
+lines(as.matrix(nelder_mead_1000$trace[,'x_1']),as.matrix(nelder_mead_1000$trace[,'x_2']),col='green')
+points(-0.5,-0.1,pch=4)
+legend(-0.9,0.3,legend = c("M = 100","M = 500","M = 1000"),fill=c('red','blue','green'),cex=.8)
+```
+
+```{r}
+# Same again but with the S9 edit
+M <- 100
+nelder_mead_S9_100 <- optim_nm(fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.001,exit=30, delta = 0.9)
+M <- 500
+nelder_mead_S9_500 <- optim_nm(fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.001,exit=30, delta = 0.9)
+M <- 1000
+nelder_mead_S9_1000 <- optim_nm(fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.001,exit=30, delta = 0.9)
+```
+
+```{r}
+par(mfrow=c(1,3))
+plot(as.matrix(nelder_mead_S9_100$trace[,'iteration']),as.matrix(nelder_mead_S9_100$trace[,'x_1']),type='l',ylim=c(-1,0.5),col='red',xlab='Iteration',ylab='mu_1')
+lines(as.matrix(nelder_mead_S9_500$trace[,'iteration']),as.matrix(nelder_mead_S9_500$trace[,'x_1']),col='blue')
+lines(as.matrix(nelder_mead_S9_1000$trace[,'iteration']),as.matrix(nelder_mead_S9_1000$trace[,'x_1']),col='green')
+abline(h=-0.5,lty=2)
+legend(20,0.4,legend = c("M = 100","M = 500","M = 1000"),fill=c('red','blue','green'),cex=.8)
+plot(as.matrix(nelder_mead_S9_100$trace[,'iteration']),as.matrix(nelder_mead_S9_100$trace[,'x_2']),type='l',ylim=c(-1,0.5),col='red',xlab='Iteration',ylab='mu_2')
+lines(as.matrix(nelder_mead_S9_500$trace[,'iteration']),as.matrix(nelder_mead_S9_500$trace[,'x_2']),col='blue')
+lines(as.matrix(nelder_mead_S9_1000$trace[,'iteration']),as.matrix(nelder_mead_S9_1000$trace[,'x_2']),col='green')
+abline(h=-0.1,lty=2)
+legend(20,-0.5,legend = c("M = 100","M = 500","M = 1000"),fill=c('red','blue','green'),cex=.8)
+plot(as.matrix(nelder_mead_S9_100$trace[,'x_1']),as.matrix(nelder_mead_S9_100$trace[,'x_2']),type='l',ylim=c(-.5,.5),xlim=c(-1,0),col='red',xlab='mu_1',ylab='mu_2')
+lines(as.matrix(nelder_mead_S9_500$trace[,'x_1']),as.matrix(nelder_mead_S9_500$trace[,'x_2']),col='blue')
+lines(as.matrix(nelder_mead_S9_1000$trace[,'x_1']),as.matrix(nelder_mead_S9_1000$trace[,'x_2']),col='green')
+points(-0.5,-0.1,pch=4,cex=2)
+legend(-0.9,0.3,legend = c("M = 100","M = 500","M = 1000"),fill=c('red','blue','green'),cex=.8)
+```
+
+
+
+
+
+
