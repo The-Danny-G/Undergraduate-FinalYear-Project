@@ -445,6 +445,111 @@ points(-0.5,-0.1,pch=4,cex=2)
 legend(-0.9,0.3,legend = c("M = 100","M = 500","M = 1000"),fill=c('red','blue','green'),cex=.8)
 ```
 
+```{r}
+# Trying average function
+
+num<-10
+delta<-0.001
+average_optimiser<-function(par,isinset, obs.data, xtrunc, ytrunc){
+  par1 <- par[1]
+  par2 <- par[2]
+  num_rep<-num
+  samples<-rep(0,num_rep)
+  for (i in 1:num_rep){
+    theta1<-runif(1,par1-delta,par1+delta)
+    theta2<-runif(1,par2-delta,par2+delta)
+    samples[i]<-optimiser_mu(c(theta1,theta2),isinset, obs.data, xtrunc, ytrunc)
+  }
+  return(sum(samples)/num_rep)
+}
+
+# Reducing fitness function to only the optimised parameter
+avg_fitness_func_maker <- function(isinset, obs.data, xtrunc, ytrunc){
+  
+  fitness_func <- function(par){
+    
+    return(average_optimiser(c(par[1], par[2]),isinset, obs.data, xtrunc, ytrunc))
+    
+  }
+  return(fitness_func)
+}
+```
+
+```{r}
+num <- 4
+delta <- 0.1
+nelder_mead_avg_4_0.1 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+delta <- 0.01
+nelder_mead_avg_4_0.01 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+delta <- 0.001
+nelder_mead_avg_4_0.001 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+num <- 7
+delta <- 0.1
+nelder_mead_avg_7_0.1 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+delta <- 0.01
+nelder_mead_avg_7_0.01 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+delta <- 0.001
+nelder_mead_avg_7_0.001 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+num <- 10
+delta <- 0.1
+nelder_mead_avg_10_0.1 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+delta <- 0.01
+nelder_mead_avg_10_0.01 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+delta <- 0.001
+nelder_mead_avg_10_0.001 <- optim_nm(avg_fitness_func_maker(isinfarm, obs.data.farm, xtrunc.farm, ytrunc.farm),k=2,start=c(0,0),trace=TRUE,tol=0.0001,exit=20)
+```
+
+```{r}
+size<-.5
+width=2
+par(mfrow=c(3,3))
+plot(nelder_mead_avg_4_0.1$trace[,'iteration'],nelder_mead_avg_4_0.1$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=4, Delta = 0.1')
+lines(nelder_mead_avg_4_0.1$trace[,'iteration'],nelder_mead_avg_4_0.1$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_4_0.01$trace[,'iteration'],nelder_mead_avg_4_0.01$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=4, Delta = 0.01')
+lines(nelder_mead_avg_4_0.01$trace[,'iteration'],nelder_mead_avg_4_0.01$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_4_0.001$trace[,'iteration'],nelder_mead_avg_4_0.001$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=4, Delta = 0.001')
+lines(nelder_mead_avg_4_0.001$trace[,'iteration'],nelder_mead_avg_4_0.001$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_7_0.1$trace[,'iteration'],nelder_mead_avg_7_0.1$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=7, Delta = 0.1')
+lines(nelder_mead_avg_7_0.1$trace[,'iteration'],nelder_mead_avg_7_0.1$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_7_0.01$trace[,'iteration'],nelder_mead_avg_7_0.01$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=7, Delta = 0.01')
+lines(nelder_mead_avg_7_0.01$trace[,'iteration'],nelder_mead_avg_7_0.01$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_7_0.001$trace[,'iteration'],nelder_mead_avg_7_0.001$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=7, Delta = 0.001')
+lines(nelder_mead_avg_7_0.001$trace[,'iteration'],nelder_mead_avg_7_0.001$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_10_0.1$trace[,'iteration'],nelder_mead_avg_10_0.1$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=10, Delta = 0.1')
+lines(nelder_mead_avg_10_0.1$trace[,'iteration'],nelder_mead_avg_10_0.1$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_10_0.01$trace[,'iteration'],nelder_mead_avg_10_0.01$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=10, Delta = 0.01')
+lines(nelder_mead_avg_10_0.01$trace[,'iteration'],nelder_mead_avg_10_0.01$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+plot(nelder_mead_avg_10_0.001$trace[,'iteration'],nelder_mead_avg_10_0.001$trace[,'x_1'],col='red',type='l',ylim=c(-1,0.5),xlab='Iteration',ylab='mu',lwd=width,main='N=10, Delta = 0.001')
+lines(nelder_mead_avg_10_0.001$trace[,'iteration'],nelder_mead_avg_10_0.001$trace[,'x_2'],col='blue',lwd=width)
+abline(h=-0.5,lty=2)
+abline(h=-0.1,lty=2)
+legend(17,0.4,legend=c('mu_1','mu_2'),fill=c('red','blue'),cex=size)
+
+```
 
 
 
